@@ -11,6 +11,9 @@ compile_commands.json
 .conan/
 conan_build_info.json
 
+# Build venv (created/destroyed by scripts/build-rpi.sh)
+.venv-build/
+
 # Capture / test output
 *.jsonl
 

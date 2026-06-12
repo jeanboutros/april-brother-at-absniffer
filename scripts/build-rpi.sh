@@ -25,12 +25,12 @@ if ! command -v cmake &>/dev/null || ! command -v g++ &>/dev/null; then
     sudo apt-get install -y -qq cmake g++ python3-pip python3-venv
 fi
 
-# --- 2. Conan (install if missing) ---
-if ! command -v conan &>/dev/null; then
-    echo "==> Installing Conan..."
-    pip3 install --user conan
-    export PATH="$HOME/.local/bin:$PATH"
-fi
+# --- 2. Python venv with Conan ---
+VENV_DIR=".venv-build"
+echo "==> Setting up build venv at ${VENV_DIR}..."
+python3 -m venv "${VENV_DIR}"
+source "${VENV_DIR}/bin/activate"
+pip install --quiet --upgrade pip conan
 
 # Ensure a default profile exists
 conan profile detect --exist-ok 2>/dev/null || conan profile detect
@@ -50,6 +50,11 @@ cmake --build --preset "${PRESET}" -j "$(nproc)"
 
 BINARY="build/${BUILD_TYPE}/bluetooth-at-driver"
 echo "==> Build complete: ${BINARY}"
+
+# --- 5. Cleanup venv ---
+deactivate
+rm -rf "${VENV_DIR}"
+echo "==> Cleaned up build venv"
 
 # --- 5. Run (if requested) ---
 if [[ -n "${RUN_DEVICE}" ]]; then
