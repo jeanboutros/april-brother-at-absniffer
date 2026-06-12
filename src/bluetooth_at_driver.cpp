@@ -20,11 +20,11 @@ BluetoothATDriver::BluetoothATDriver(const std::string& device) : m_device(devic
 
 BluetoothATDriver::~BluetoothATDriver() {
     if (file_descriptor >= 0) {
+        stop_scan();
+        reset_device();
         close(file_descriptor);
         file_descriptor = -1;
     }
-    BluetoothATDriver::stop_scan(); // Ensure scanning is stopped on exit
-    BluetoothATDriver::reset_device(); // Reset device to clean state
     std::cout << "Bluetooth AT Driver cleaned up." << std::endl;
 }
 
@@ -55,9 +55,11 @@ void BluetoothATDriver::init() {
     tty.c_cflag &= ~CSTOPB;
     // No hardware flow control
     tty.c_cflag &= ~CRTSCTS;
+    // Enable receiver; ignore modem control lines (required for Linux USB serial)
+    tty.c_cflag |= (CLOCAL | CREAD);
 
-    // No break processing
-    tty.c_iflag &= ~IGNBRK;
+    // Disable software flow control and input byte translation
+    tty.c_iflag &= ~(IGNBRK | IXON | IXOFF | IXANY | ICRNL | INLCR | IGNCR);
     // Non-canonical mode: no echo, no line editing
     tty.c_lflag = 0;
     // No output processing
