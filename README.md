@@ -54,6 +54,34 @@ rm -rf build/Release
 cmake --build --preset conan-debug --clean-first
 ```
 
+### Raspberry Pi
+
+A single script handles installing deps, building, and optionally running:
+
+```bash
+# Clone on the Pi
+git clone https://github.com/jeanboutros/april-brother-at-absniffer.git
+cd april-brother-at-absniffer
+
+# Build (Release by default — best for Pi performance)
+./scripts/build-rpi.sh
+
+# Build Debug
+./scripts/build-rpi.sh --debug
+
+# Build and immediately start scanning
+./scripts/build-rpi.sh --run /dev/ttyUSB0
+
+# Build Debug and run
+./scripts/build-rpi.sh --debug --run /dev/ttyUSB0
+```
+
+The script is idempotent — it only installs packages that are missing. On a fresh Raspberry Pi OS it will:
+1. Install `cmake`, `g++`, `python3-pip` via `apt`
+2. Install Conan via `pip3` and create a default profile
+3. Run `conan install` + `cmake --preset` + build
+4. (With `--run`) launch the binary against the specified device
+
 ## Usage
 
 ```
