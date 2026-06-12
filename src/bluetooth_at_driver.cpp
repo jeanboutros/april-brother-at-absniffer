@@ -14,7 +14,7 @@
 
 namespace ble_sniffer {
 
-BluetoothATDriver::BluetoothATDriver() : file_descriptor(-1) {
+BluetoothATDriver::BluetoothATDriver(const std::string& device) : m_device(device), file_descriptor(-1) {
     init();
 }
 
@@ -29,9 +29,9 @@ BluetoothATDriver::~BluetoothATDriver() {
 }
 
 void BluetoothATDriver::init() {
-    file_descriptor = open(sniffer_device, O_RDWR | O_NOCTTY | O_SYNC);
+    file_descriptor = open(m_device.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (file_descriptor < 0) {
-        std::cerr << "Error opening device: " << sniffer_device << std::endl;
+        std::cerr << "Error opening device: " << m_device << std::endl;
         return;
     }
 

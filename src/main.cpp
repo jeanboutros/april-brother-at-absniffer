@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
     int  stat_limit = 30;
     int  verbosity = 0;
     std::string output_path;
+    std::string device_path;
 
     CLI::App app{"Bluetooth AT Driver CLI"};
     app.add_flag("-i,--info",  info_flag, "Query device info (status, address, version)");
@@ -92,9 +93,11 @@ int main(int argc, char** argv) {
     app.add_flag("--stat", stat_flag, "Show live device dashboard (TUI) instead of raw packet stream");
     app.add_option("--stat-limit", stat_limit, "Max devices to track in --stat mode")->default_val(30);
     app.add_option("-o,--output", output_path, "Write captured packets to a JSONL file (one packet per line)");
+    app.add_option("device", device_path, "Serial device path (e.g. /dev/cu.usbmodemXXX or /dev/ttyUSB0)")
+        ->required();
     CLI11_PARSE(app, argc, argv);
 
-    ble_sniffer::BluetoothATDriver driver;
+    ble_sniffer::BluetoothATDriver driver(device_path);
 
     if (info_flag) {
         std::cout << "Reading from Bluetooth AT Driver..." << std::endl;

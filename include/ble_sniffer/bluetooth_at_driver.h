@@ -41,9 +41,6 @@ namespace ble_sniffer {
 
 // --- Device configuration ---
 
-/// Default serial device path for the ABSniffer 528.
-constexpr const char* sniffer_device = "/dev/cu.usbmodemE5373320F96A1";
-
 /// Default baud rate matching the device factory setting.
 constexpr speed_t sniffer_baud_rate = B115200;
 
@@ -77,7 +74,21 @@ constexpr int sniffer_timeout = 1000;
  * @endcode
  */
 struct BluetoothATDriver {
-    BluetoothATDriver();
+    /**
+     * @brief Construct and open the serial port.
+     * @param device Serial device path (e.g. "/dev/cu.usbmodemXXX" on macOS,
+     *               "/dev/ttyUSB0" on Linux). Defaults to the factory device path.
+     *
+     * @example
+     * @code
+     * // Use default device path
+     * ble_sniffer::BluetoothATDriver driver;
+     *
+     * // Specify a custom device path
+     * ble_sniffer::BluetoothATDriver driver("/dev/ttyUSB0");
+     * @endcode
+     */
+    explicit BluetoothATDriver(const std::string& device);
     ~BluetoothATDriver();
 
     /**
@@ -164,6 +175,7 @@ struct BluetoothATDriver {
     void reset_device();
 
 private:
+    std::string m_device;
     int file_descriptor;
     std::string read_buffer;
 };
