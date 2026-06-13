@@ -2,7 +2,7 @@
 
 A CLI tool for communicating with an ABSniffer 528 BLE sniffer device over serial using AT commands.
 
-## Origin
+## Origination
 
 I was in China and wanted to get a Bluetooth sniffer. I went on Taobao and found a model that seemed fine. With my clunky Chinese I missed a detail — it was a limited device that only captures advertisement packets and is controlled using AT commands.
 
@@ -12,6 +12,52 @@ And that's how this project was born.
 
 - **Device:** [ABSniffer 528 on Taobao](https://item.taobao.com/item.htm?id=586733843626)
 - **Wiki:** [AT Commands for ABSniffer 528](https://wiki.aprbrother.com/en/AT_Commands_For_ABSniffer_528.html)
+
+## Vision
+
+This project started as a simple AT command driver for a cheap BLE sniffer. But the deeper you look at wireless signals, the more you realize that the same problems repeat across every frequency: device tracking, signal smoothing, behavioral classification, presence detection, anomaly detection. The same pipeline that processes BLE advertisements can process WiFi probe requests, Zigbee join/leave events, or ADS-B flight telemetry. The same EMA that smooths RSSI can smooth LQI. The same hysteresis that detects iBeacon region entry can detect WiFi zone transitions. The same behavioral classifier that spots a neighbor's TV can spot a delivery truck from its tire-pressure sensor.
+
+That realization led to [天耳 (Tian'er)](https://github.com/jeanboutros/tian-er) — a Signal Intelligence Platform designed to listen to anything that propagates through the air. Tian'er is the full stack: multiple sensor types (BLE, WiFi, GPS, ADS-B, ISM-band, and more), a time-series database, a REST API, dashboards, and ML enrichment. This project — `april-brother-at-absniffer` — is the C++ library and CLI that started it all, and its reusable modules are designed to feed directly into Tian'er's BLE sensor pipeline.
+
+### How the modules map to Tian'er
+
+The clean architecture we've built here is not accidental. Every reusable module in this library was designed to have zero dependency on the ABSniffer 528 or its AT protocol:
+
+| This project (library) | Tian'er (platform) | Reuse |
+|------------------------|---------------------|-------|
+| `signal_processing` | EMA smoothing, hysteresis, debounce | Any signal type — BLE RSSI, WiFi RSSI, Zigbee LQI |
+| `feature_extraction` | Presence features, temporal features | Any device tracker — BLE, WiFi, Zigbee |
+| `PresenceAnalyzer` | Behavioral classification | Any device tracker with any signal source |
+| `PatternClassifier` | Rule-based + future AI | Pluggable: swap `RuleBasedClassifier` for `AIClassifier` |
+| `DeviceRegistry` | Per-device state tracking | Any MAC-based or ID-based tracking system |
+| `DeviceEventTracker` | Event detection and emission | Any event-driven device tracker |
+| `ProfileStorage` | Session/Daily/LongTerm profiles | Any behavioral analysis system |
+| `AdParser` | BLE AD structure parsing | Any BLE project |
+| `ProprietaryParsers` | Apple, Samsung, Microsoft decoders | Any BLE sniffer |
+| `PacketSource` / `PacketSink` | Generic I/O abstraction | Any data pipeline |
+
+To reuse for WiFi or another signal type:
+1. Write a `WiFiDriver : public PacketSource` (replaces `SerialSource`)
+2. Write a `WiFiParser` → `DeviceObservation` (replaces `MessageParser`)
+3. Write a `WiFiPresenceAdapter` (replaces `BlePresenceAdapter`)
+4. Reuse everything else unchanged
+
+### The wider picture
+
+Tian'er is designed as a multi-sensor platform where each sensor type plugs into shared infrastructure:
+
+```
+BLE sniffer (this project)  ──┐
+WiFi probe sniffer          ──┤
+ADS-B receiver              ──┼──▶ TimescaleDB ──▶ FastAPI ──▶ Vue.js + Grafana
+GPS receiver                ──┤
+ISM-band decoder            ──┤
+LoRaWAN concentrator        ──┘
+```
+
+Each sensor module has its own wrapper, ingest bridge, and parser, but they all share the same database, API, frontend, and dashboards. The `PresenceAnalyzer`, `DeviceRegistry`, and `PatternClassifier` from this library are the classification engine that turns raw observations into behavioral intelligence across all sensor types.
+
+The ABSniffer 528 is a capable, affordable starting point. The architecture ensures that when you graduate to Ubertooth One or nRF52840 dongles (as Tian'er does), the intelligence layer doesn't change — only the sensor driver does.
 
 ## Prerequisites
 
