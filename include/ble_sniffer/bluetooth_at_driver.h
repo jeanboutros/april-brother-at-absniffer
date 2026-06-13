@@ -45,7 +45,13 @@ namespace ble_sniffer {
 constexpr speed_t sniffer_baud_rate = B115200;
 
 /// Read timeout in milliseconds before returning NO_DATA.
+/// @note Range constraint: 100ms–25500ms (25.5s). VTIME is an unsigned char
+///       representing tenths of a second (0–255). Values below 100ms would
+///       yield VTIME=0 (immediate return), and values above 25500ms would
+///       overflow cc_t.
 constexpr int sniffer_timeout = 1000;
+static_assert(sniffer_timeout >= 100, "VTIME requires timeout >= 100ms");
+static_assert(sniffer_timeout / 100 <= 255, "VTIME exceeds cc_t max (25.5s)");
 
 /**
  * @brief Serial driver for the ABSniffer 528 BLE sniffer.
@@ -93,11 +99,35 @@ struct BluetoothATDriver {
 
     /**
      * @brief Open and configure the serial port.
+     * @return true if the port was opened and configured successfully, false otherwise.
      *
      * Configures: 115200 baud, 8N1, no flow control, non-canonical mode.
-     * Called automatically by the constructor.
+     * Called automatically by the constructor. Check is_open() after construction
+     * to verify success.
+     *
+     * @example
+     * @code
+     * ble_sniffer::BluetoothATDriver driver("/dev/ttyUSB0");
+     * if (!driver.is_open()) {
+     *     std::cerr << "Failed to open device" << std::endl;
+     * }
+     * @endcode
      */
-    void init();
+    bool init();
+
+    /**
+     * @brief Check whether the serial port is open and ready for communication.
+     * @return true if the port is open, false if init() failed or the port was closed.
+     *
+     * @example
+     * @code
+     * ble_sniffer::BluetoothATDriver driver("/dev/ttyUSB0");
+     * if (driver.is_open()) {
+     *     driver.start_scan();
+     * }
+     * @endcode
+     */
+    bool is_open() const { return m_file_descriptor >= 0; }
 
     /**
      * @brief Read one complete response line from the device.
@@ -176,8 +206,11 @@ struct BluetoothATDriver {
 
 private:
     std::string m_device;
-    int file_descriptor;
-    std::string read_buffer;
+    int m_file_descriptor;
+    std::string m_read_buffer;
+
+    /// Maximum read buffer size (64KB). Overflow clears the buffer and returns error.
+    static constexpr size_t MAX_READ_BUFFER = 65536;
 };
 
 } // namespace ble_sniffer

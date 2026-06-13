@@ -6,6 +6,33 @@
 #include <ble_sniffer/messages.h>
 #include <ble_sniffer/types.h>
 
+#include <climits>
+
+namespace {
+
+/**
+ * @brief Safe string-to-integer conversion that never throws.
+ * @param str The string to convert.
+ * @param base The numeric base (10 for decimal, 16 for hex). Default: 10.
+ * @param default_val The value to return on conversion failure. Default: 0.
+ * @return The converted integer, or default_val if conversion fails.
+ */
+int safe_stoi(const std::string& str, int base = 10, int default_val = 0) {
+    try {
+        size_t idx = 0;
+        long result = std::stol(str, &idx, base);
+        // Check that at least one character was consumed and the result fits in int
+        if (idx == 0 || result < INT_MIN || result > INT_MAX) {
+            return default_val;
+        }
+        return static_cast<int>(result);
+    } catch (const std::exception&) {
+        return default_val;
+    }
+}
+
+} // anonymous namespace
+
 namespace ble_sniffer {
 
 // --- Free functions ---
@@ -125,28 +152,37 @@ ScanResultMessage ScanResultMessage::from(const RawMessage& raw) {
     // RSSI in dBm
     pos = remaining.find(DATA_DELIMITER);
     if (pos != std::string::npos) {
-        msg.m_rssi = std::stoi(remaining.substr(0, pos));
+        msg.m_rssi = safe_stoi(remaining.substr(0, pos));
         remaining = remaining.substr(pos + 1);
     }
 
     // Advertisement type (integer mapped to AdvertisementType enum)
     pos = remaining.find(DATA_DELIMITER);
     if (pos != std::string::npos) {
-        msg.m_adv_type = static_cast<AdvertisementType>(std::stoi(remaining.substr(0, pos)));
+        {
+            int adv_val = safe_stoi(remaining.substr(0, pos));
+            if (adv_val >= 0 && adv_val <= 4) {
+                msg.m_adv_type = static_cast<AdvertisementType>(adv_val);
+            } else {
+                msg.m_adv_type = AdvertisementType::CONNECTABLE_UNDIRECTED;
+            }
+        }
         remaining = remaining.substr(pos + 1);
     }
 
     // Data length (byte count, decimal)
     pos = remaining.find(DATA_DELIMITER);
     if (pos != std::string::npos) {
-        msg.m_data_length = std::stoi(remaining.substr(0, pos));
+        msg.m_data_length = safe_stoi(remaining.substr(0, pos));
         remaining = remaining.substr(pos + 1);
     }
 
     // Advertisement data (hex string → byte vector)
     for (size_t i = 0; i + 1 < remaining.size(); i += 2) {
-        uint8_t byte = static_cast<uint8_t>(std::stoi(remaining.substr(i, 2), nullptr, 16));
-        msg.m_adv_data.push_back(byte);
+        int byte_val = safe_stoi(remaining.substr(i, 2), 16, -1);
+        if (byte_val >= 0 && byte_val <= 0xFF) {
+            msg.m_adv_data.push_back(static_cast<uint8_t>(byte_val));
+        }
     }
 
     return msg;
