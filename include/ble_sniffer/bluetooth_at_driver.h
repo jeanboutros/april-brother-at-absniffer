@@ -47,7 +47,8 @@ namespace ble_sniffer {
 /**
  * @brief Serial driver for the ABSniffer 528 BLE sniffer.
  *
- * Opens the serial port on construction and closes it on destruction (RAII).
+ * Takes ownership of an already-initialized serial port on construction and closes it on destruction (RAII).
+ * The port must be open (is_open() returns true) before construction; otherwise std::invalid_argument is thrown.
  * All communication is synchronous and blocking up to the configured timeout.
  *
  * @example

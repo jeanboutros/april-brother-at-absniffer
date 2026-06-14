@@ -15,6 +15,9 @@ BluetoothATDriver::BluetoothATDriver(std::unique_ptr<serial::SerialPort> serial_
     if (!m_serial_port) {
         throw std::invalid_argument("serial_port must not be null");
     }
+    if (!m_serial_port->is_open()) {
+        throw std::invalid_argument("serial_port must be open before constructing BluetoothATDriver (call init() first)");
+    }
 }
 
 BluetoothATDriver::~BluetoothATDriver() {

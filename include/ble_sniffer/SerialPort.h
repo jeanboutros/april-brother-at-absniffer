@@ -194,7 +194,7 @@ struct SerialPort {
      * @brief Open and configure the serial port.
      * @return true if the port was opened and configured successfully, false otherwise.
      */
-    virtual bool init() = 0;
+    [[nodiscard]] virtual bool init() = 0;
 
     /**
      * @brief Check whether the serial port is open and ready for communication.

@@ -99,7 +99,28 @@ int main(int argc, char** argv) {
         ->required();
     CLI11_PARSE(app, argc, argv);
 
-    ble_sniffer::BluetoothATDriver driver(std::make_unique<serial::ABSnifferSerialPort>(device_path));
+    // Require at least one action flag so the program doesn't exit silently.
+    if (!info_flag && !scan_flag && !stop_scan_flag) {
+        std::cerr << "Error: No action specified. Use -i (info), -s (scan), or --stop-scan." << std::endl;
+        return 1;
+    }
+
+    // Initialize the serial port before passing it to the driver.
+    // init() must be called explicitly — the driver does not call it.
+    auto port = std::make_unique<serial::ABSnifferSerialPort>(device_path);
+    try {
+        // Defensive check: ABSnifferSerialPort::init() always throws on failure (never returns false),
+        // but the SerialPort interface contract permits implementations that return false.
+        // This check handles alternative SerialPort implementations correctly.
+        if (!port->init()) {
+            std::cerr << "Failed to initialize serial port: " << device_path << std::endl;
+            return 1;
+        }
+    } catch (const serial::SerialPortException& e) {
+        std::cerr << "Error opening serial port: " << e.what() << std::endl;
+        return 1;
+    }
+    ble_sniffer::BluetoothATDriver driver(std::move(port));
 
     if (info_flag) {
         std::cout << "Reading from Bluetooth AT Driver..." << std::endl;
