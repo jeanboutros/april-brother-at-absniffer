@@ -1,5 +1,7 @@
 #include <ble_sniffer/bluetooth_at_driver.h>
 #include <ble_sniffer/messages.h>
+#include <ble_sniffer/SerialPort.h>
+#include <ble_sniffer/ab_sniffer_serial_port.h>
 #include <ble_sniffer/ad_parser.h>
 #include <ble_sniffer/assigned_numbers.h>
 #include <ble_sniffer/proprietary_parsers.h>
@@ -97,7 +99,7 @@ int main(int argc, char** argv) {
         ->required();
     CLI11_PARSE(app, argc, argv);
 
-    ble_sniffer::BluetoothATDriver driver(device_path);
+    ble_sniffer::BluetoothATDriver driver(std::make_unique<serial::ABSnifferSerialPort>(device_path));
 
     if (info_flag) {
         std::cout << "Reading from Bluetooth AT Driver..." << std::endl;

@@ -13,7 +13,7 @@
  * #include <ble_sniffer/types.h>
  *
  * // Send a baud rate command parameter
- * int param = static_cast<int>(ble_sniffer::BaudRate::BAUD_115200); // 4
+ * int param = static_cast<int>(ble_sniffer::AtBaudParam::BAUD_115200); // 4
  *
  * // Convert advertisement type to display string
  * auto type = ble_sniffer::AdvertisementType::SCAN_RESPONSE;
@@ -53,7 +53,7 @@ inline constexpr std::string_view AT_SCAN0 = "AT+SCAN0";
  */
 inline constexpr std::string_view AT_SCAN1 = "AT+SCAN1";
 
-/// Set the baud rate. Append BaudRate enum value (0-5). e.g. "AT+BAUD4"
+/// Set the baud rate. Append AtBaudParam enum value (0-5). e.g. "AT+BAUD4"
 inline constexpr std::string_view AT_BAUD = "AT+BAUD";
 
 /// Set active/passive scan mode. Append ScanMode enum value (0-1). e.g. "AT+ACT1"
@@ -73,18 +73,28 @@ inline constexpr char DATA_DELIMITER = ',';
 /// All AT commands must be terminated with \r\n
 inline constexpr std::string_view COMMAND_DELIMITER = "\r\n";
 
+// --- Constants ---
+
+/// Default baud rate for the ABSniffer 528 BLE sniffer (115200 bps).
+/// Use this to configure the serial port when connecting to the device.
+inline constexpr int sniffer_baud_rate_bps = 115200;
+
 // --- Enums ---
 
 /**
  * @brief Baud rate parameter for the AT+BAUD command.
  *
+ * These values (0-5) are the AT protocol parameter codes sent to the device,
+ * NOT actual baud rates. Use serial::BaudRate for actual serial port baud rates
+ * and serial::baud_rate_from_num() to convert.
+ *
  * @example
  * @code
  * // Set device to 115200 bps (the default)
- * driver.set_baud_rate(ble_sniffer::BaudRate::BAUD_115200);
+ * driver.set_baud_rate(ble_sniffer::AtBaudParam::BAUD_115200);
  * @endcode
  */
-enum class BaudRate : int {
+enum class AtBaudParam : int {
     BAUD_9600   = 0, ///< 9600 bps
     BAUD_19200  = 1, ///< 19200 bps
     BAUD_38400  = 2, ///< 38400 bps
@@ -92,6 +102,57 @@ enum class BaudRate : int {
     BAUD_115200 = 4, ///< 115200 bps (device default)
     BAUD_230400 = 5, ///< 230400 bps
 };
+
+/**
+ * @brief Convert an actual baud rate (e.g. 115200) to the corresponding AT parameter.
+ * @param baud_rate Actual baud rate in bps (must be one of the supported values).
+ * @return The AtBaudParam enum value for the AT+BAUD command.
+ * @throws std::invalid_argument if the baud rate is not supported.
+ *
+ * @example
+ * @code
+ * auto param = ble_sniffer::at_baud_param_from_num(115200);
+ * // Returns: AtBaudParam::BAUD_115200
+ * @endcode
+ */
+template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+static constexpr AtBaudParam at_baud_param_from_num(T baud_rate) {
+    switch (static_cast<int>(baud_rate)) {
+        case 9600: return AtBaudParam::BAUD_9600;
+        case 19200: return AtBaudParam::BAUD_19200;
+        case 38400: return AtBaudParam::BAUD_38400;
+        case 57600: return AtBaudParam::BAUD_57600;
+        case 115200: return AtBaudParam::BAUD_115200;
+        case 230400: return AtBaudParam::BAUD_230400;
+        default:
+            throw std::invalid_argument("Unsupported baud rate");
+    }
+}
+/**
+ * @brief Convert an AT baud rate parameter to the actual baud rate in bps.
+ * @param baud_param The AtBaudParam enum value.
+ * @return The actual baud rate in bps (e.g. 115200).
+ * @throws std::invalid_argument if the parameter is not supported.
+ *
+ * @example
+ * @code
+ * int rate = ble_sniffer::at_baud_param_to_num<int>(ble_sniffer::AtBaudParam::BAUD_115200);
+ * // Returns: 115200
+ * @endcode
+ */
+template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+static constexpr T at_baud_param_to_num(AtBaudParam baud_param) {
+    switch (baud_param) {
+        case AtBaudParam::BAUD_9600: return 9600;
+        case AtBaudParam::BAUD_19200: return 19200;
+        case AtBaudParam::BAUD_38400: return 38400;
+        case AtBaudParam::BAUD_57600: return 57600;
+        case AtBaudParam::BAUD_115200: return 115200;
+        case AtBaudParam::BAUD_230400: return 230400;
+        default:
+            throw std::invalid_argument("Unsupported baud rate");
+    }
+}
 
 /**
  * @brief Scan mode parameter for the AT+ACT command.

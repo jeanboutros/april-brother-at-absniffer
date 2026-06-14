@@ -12,6 +12,8 @@ add_library(ble_sniffer
     src/assigned_numbers.cpp
     src/ad_parser.cpp
     src/proprietary_parsers.cpp
+    include/ble_sniffer/SerialPort.h
+    src/ab_sniffer_serial_port.cpp
 )
 target_include_directories(ble_sniffer PUBLIC include)
 target_compile_features(ble_sniffer PUBLIC cxx_std_17)

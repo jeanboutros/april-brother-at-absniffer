@@ -5,118 +5,70 @@
 
 #include <ble_sniffer/bluetooth_at_driver.h>
 
+#include <stdexcept>
 #include <iostream>
-#include <cerrno>
-#include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
-#include <termios.h>
+#include <ble_sniffer/SerialPort.h>
 
 namespace ble_sniffer {
 
-BluetoothATDriver::BluetoothATDriver(const std::string& device) : m_device(device), m_file_descriptor(-1) {
-    init();
+BluetoothATDriver::BluetoothATDriver(std::unique_ptr<serial::SerialPort> serial_port) : m_serial_port(std::move(serial_port)) {
+    if (!m_serial_port) {
+        throw std::invalid_argument("serial_port must not be null");
+    }
 }
 
 BluetoothATDriver::~BluetoothATDriver() {
-    if (m_file_descriptor >= 0) {
+    if (m_serial_port->is_open()) {
         stop_scan();
         reset_device();
-        close(m_file_descriptor);
-        m_file_descriptor = -1;
+        m_serial_port->close_connection();
     }
     std::cout << "Bluetooth AT Driver cleaned up." << std::endl;
 }
 
-bool BluetoothATDriver::init() {
-    m_file_descriptor = open(m_device.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-    if (m_file_descriptor < 0) {
-        std::cerr << "Error opening device: " << m_device << std::endl;
-        return false;
-    }
-
-    struct termios tty;
-    if (tcgetattr(m_file_descriptor, &tty) != 0) {
-        std::cerr << "Error getting terminal attributes" << std::endl;
-        close(m_file_descriptor);
-        m_file_descriptor = -1;
-        return false;
-    }
-
-    // Baud rate: 115200 (device default)
-    cfsetospeed(&tty, sniffer_baud_rate);
-    cfsetispeed(&tty, sniffer_baud_rate);
-
-    // 8 data bits
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-    // No parity
-    tty.c_cflag &= ~PARENB;
-    // 1 stop bit (CSTOPB set = 2 stop bits)
-    tty.c_cflag &= ~CSTOPB;
-    // No hardware flow control
-    tty.c_cflag &= ~CRTSCTS;
-    // Enable receiver; ignore modem control lines (required for Linux USB serial)
-    tty.c_cflag |= (CLOCAL | CREAD);
-
-    // Disable software flow control and input byte translation
-    tty.c_iflag &= ~(IGNBRK | IXON | IXOFF | IXANY | ICRNL | INLCR | IGNCR);
-    // Non-canonical mode: no echo, no line editing
-    tty.c_lflag = 0;
-    // No output processing
-    tty.c_oflag = 0;
-
-    // Non-blocking read with timeout
-    tty.c_cc[VMIN]  = 0;
-    tty.c_cc[VTIME] = static_cast<cc_t>(sniffer_timeout / 100);
-
-    if (tcsetattr(m_file_descriptor, TCSANOW, &tty) != 0) {
-        std::cerr << "Error setting terminal attributes" << std::endl;
-        close(m_file_descriptor);
-        m_file_descriptor = -1;
-        return false;
-    }
-
-    // Discard any stale data in buffers
-    tcflush(m_file_descriptor, TCIOFLUSH);
-    return true;
-}
-
 void BluetoothATDriver::send_command(const std::string& command, const std::string& params) {
-    if (!is_open()) return;
+    if (!m_serial_port->is_open()) return;
     std::string full_command = command;
     if (!params.empty()) {
         full_command += params;
     }
     full_command += COMMAND_DELIMITER.data();
-    ssize_t written = write(m_file_descriptor, full_command.c_str(), full_command.size());
-    if (written < 0 || static_cast<size_t>(written) != full_command.size()) {
-        std::cerr << "Error writing command: " << strerror(errno) << std::endl;
+    try {
+        std::size_t written = m_serial_port->write(full_command.c_str(), full_command.size());
+        if (written != full_command.size()) {
+            std::cerr << "Error writing command: partial write (" << written << "/" << full_command.size() << " bytes)" << std::endl;
+        }
+    } catch (const serial::SerialWriteException& e) {
+        std::cerr << "Serial write exception: " << e.what() << std::endl;
     }
 }
 
 RawMessage BluetoothATDriver::read_line() {
-    if (!is_open()) return RawMessage::error();
+    if (!m_serial_port->is_open()) return RawMessage::error();
     char buf[512];
     while (true) {
-        ssize_t n = read(m_file_descriptor, buf, sizeof(buf));
-        if (n > 0) {
-            m_read_buffer.append(buf, n);
-            if (m_read_buffer.size() > MAX_READ_BUFFER) {
-                std::cerr << "Read buffer overflow, clearing" << std::endl;
-                m_read_buffer.clear();
-                return RawMessage::error();
+        try {
+            std::size_t n = m_serial_port->read(buf, sizeof(buf));
+            if (n > 0) {
+                m_read_buffer.append(buf, n);
+                if (m_read_buffer.size() > serial::SerialPort::MAX_READ_BUFFER) {
+                    std::cerr << "Read buffer overflow, clearing" << std::endl;
+                    m_read_buffer.clear();
+                    return RawMessage::error();
+                }
+                // Check for a complete line
+                auto pos = m_read_buffer.find(COMMAND_DELIMITER.data());
+                if (pos != std::string::npos) {
+                    std::string line = m_read_buffer.substr(0, pos);
+                    m_read_buffer.erase(0, pos + COMMAND_DELIMITER.size());
+                    return RawMessage::parse(line);
+                }
+            } else if (n == 0) {
+                std::cerr << "Read timeout or no data available" << std::endl;
+                return RawMessage::no_data();
             }
-            // Check for a complete line
-            auto pos = m_read_buffer.find("\r\n");
-            if (pos != std::string::npos) {
-                std::string line = m_read_buffer.substr(0, pos);
-                m_read_buffer.erase(0, pos + 2);
-                return RawMessage::parse(line);
-            }
-        } else if (n == 0) {
-            break; // timeout
-        } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            std::cerr << "read error: " << strerror(errno) << std::endl;
+        } catch (const serial::SerialReadException& e) {
+            std::cerr << "Serial read error: " << e.what() << std::endl;
             return RawMessage::error();
         }
     }
@@ -124,25 +76,25 @@ RawMessage BluetoothATDriver::read_line() {
 }
 
 RawMessage BluetoothATDriver::query_status() {
-    if (!is_open()) return RawMessage::error();
+    if (!is_connected()) return RawMessage::error();
     send_command(AT.data());
     return read_line();
 }
 
 RawMessage BluetoothATDriver::query_address() {
-    if (!is_open()) return RawMessage::error();
+    if (!is_connected()) return RawMessage::error();
     send_command(AT_ADDR.data());
     return read_line();
 }
 
 RawMessage BluetoothATDriver::query_version() {
-    if (!is_open()) return RawMessage::error();
+    if (!is_connected()) return RawMessage::error();
     send_command(AT_VERS.data());
     return read_line();
 }
 
 std::string BluetoothATDriver::device_info() {
-    if (!is_open()) return "Device Info:\nPort not open\n";
+    if (!is_connected()) return "Device Info:\nPort not open\n";
     std::string info = "Device Info:\n";
     info += "Status: " + query_status().prefix() + "\n";
     info += "Address: " + address_to_mac_address(query_address().data()) + "\n";
@@ -151,28 +103,41 @@ std::string BluetoothATDriver::device_info() {
 }
 
 void BluetoothATDriver::start_scan() {
-    if (!is_open()) return;
+    if (!is_connected()) return;
     send_command(AT_SCAN1.data());
 }
 
 void BluetoothATDriver::stop_scan() {
-    if (!is_open()) return;
+    if (!is_connected()) return;
     send_command(AT_SCAN0.data());
 }
 
-void BluetoothATDriver::set_baud_rate(BaudRate baud_rate) {
-    if (!is_open()) return;
+void BluetoothATDriver::set_baud_rate(AtBaudParam baud_rate) {
+    if (!is_connected()) return;
     send_command(AT_BAUD.data(), std::to_string(static_cast<int>(baud_rate)));
+    // Update the serial port's baud rate to match the device
+    int sniffer_baud_rate = at_baud_param_to_num<int>(baud_rate);
+    // Convert the baud rate to the corresponding serial::BaudRate enum
+    serial::BaudRate serial_baud_rate = serial::baud_rate_from_num(sniffer_baud_rate);
+    if (!m_serial_port->set_baud_rate(serial_baud_rate)) {
+        std::cerr << "Failed to set serial port baud rate to " << sniffer_baud_rate << std::endl;
+    }
 }
+    
 
 void BluetoothATDriver::set_scan_mode(ScanMode scan_mode) {
-    if (!is_open()) return;
+    if (!is_connected()) return;
     send_command(AT_ACT.data(), std::to_string(static_cast<int>(scan_mode)));
 }
 
 void BluetoothATDriver::reset_device() {
-    if (!is_open()) return;
+    if (!is_connected()) return;
     send_command(AT_RST.data());
 }
+
+bool BluetoothATDriver::is_connected() {
+    return m_serial_port->is_open();
+}
+
 
 } // namespace ble_sniffer

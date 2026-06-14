@@ -11,10 +11,13 @@
  * @example
  * @code
  * #include <ble_sniffer/bluetooth_at_driver.h>
+ * #include <ble_sniffer/ab_sniffer_serial_port.h>
  * #include <iostream>
  *
  * int main() {
- *     ble_sniffer::BluetoothATDriver driver;
+ *     auto port = std::make_unique<serial::ABSnifferSerialPort>("/dev/ttyUSB0");
+ *     port->init();
+ *     ble_sniffer::BluetoothATDriver driver(std::move(port));
  *
  *     // Query device information
  *     std::cout << driver.device_info() << std::endl;
@@ -34,24 +37,12 @@
  */
 
 #include <ble_sniffer/messages.h>
+#include <ble_sniffer/SerialPort.h>
+#include <memory>
 #include <string>
-#include <termios.h>
 
 namespace ble_sniffer {
 
-// --- Device configuration ---
-
-/// Default baud rate matching the device factory setting.
-constexpr speed_t sniffer_baud_rate = B115200;
-
-/// Read timeout in milliseconds before returning NO_DATA.
-/// @note Range constraint: 100ms–25500ms (25.5s). VTIME is an unsigned char
-///       representing tenths of a second (0–255). Values below 100ms would
-///       yield VTIME=0 (immediate return), and values above 25500ms would
-///       overflow cc_t.
-constexpr int sniffer_timeout = 1000;
-static_assert(sniffer_timeout >= 100, "VTIME requires timeout >= 100ms");
-static_assert(sniffer_timeout / 100 <= 255, "VTIME exceeds cc_t max (25.5s)");
 
 /**
  * @brief Serial driver for the ABSniffer 528 BLE sniffer.
@@ -61,7 +52,9 @@ static_assert(sniffer_timeout / 100 <= 255, "VTIME exceeds cc_t max (25.5s)");
  *
  * @example
  * @code
- * ble_sniffer::BluetoothATDriver driver;
+ * auto port = std::make_unique<serial::ABSnifferSerialPort>("/dev/ttyUSB0");
+ * port->init();
+ * ble_sniffer::BluetoothATDriver driver(std::move(port));
  *
  * // Check if device is responsive
  * auto status = driver.query_status();
@@ -70,7 +63,7 @@ static_assert(sniffer_timeout / 100 <= 255, "VTIME exceeds cc_t max (25.5s)");
  * }
  *
  * // Change baud rate
- * driver.set_baud_rate(ble_sniffer::BaudRate::BAUD_230400);
+ * driver.set_baud_rate(ble_sniffer::AtBaudParam::BAUD_230400);
  *
  * // Enable active scanning mode
  * driver.set_scan_mode(ble_sniffer::ScanMode::ACTIVE);
@@ -80,40 +73,26 @@ static_assert(sniffer_timeout / 100 <= 255, "VTIME exceeds cc_t max (25.5s)");
  * @endcode
  */
 struct BluetoothATDriver {
-    /**
-     * @brief Construct and open the serial port.
-     * @param device Serial device path (e.g. "/dev/cu.usbmodemXXX" on macOS,
-     *               "/dev/ttyUSB0" on Linux). Defaults to the factory device path.
-     *
-     * @example
-     * @code
-     * // Use default device path
-     * ble_sniffer::BluetoothATDriver driver;
-     *
-     * // Specify a custom device path
-     * ble_sniffer::BluetoothATDriver driver("/dev/ttyUSB0");
-     * @endcode
-     */
-    explicit BluetoothATDriver(const std::string& device);
-    ~BluetoothATDriver();
 
     /**
-     * @brief Open and configure the serial port.
-     * @return true if the port was opened and configured successfully, false otherwise.
-     *
-     * Configures: 115200 baud, 8N1, no flow control, non-canonical mode.
-     * Called automatically by the constructor. Check is_open() after construction
-     * to verify success.
+     * @brief Construct a driver with the given serial port.
+     * @param serial_port Ownership of a SerialPort implementation (moved in).
      *
      * @example
      * @code
-     * ble_sniffer::BluetoothATDriver driver("/dev/ttyUSB0");
-     * if (!driver.is_open()) {
-     *     std::cerr << "Failed to open device" << std::endl;
-     * }
+     * auto port = std::make_unique<serial::ABSnifferSerialPort>("/dev/ttyUSB0");
+     * port->init();
+     * ble_sniffer::BluetoothATDriver driver(std::move(port));
      * @endcode
      */
-    bool init();
+    explicit BluetoothATDriver(std::unique_ptr<serial::SerialPort> serial_port);
+    ~BluetoothATDriver();
+
+    BluetoothATDriver(const BluetoothATDriver&) = delete;
+    BluetoothATDriver& operator=(const BluetoothATDriver&) = delete;
+    BluetoothATDriver(BluetoothATDriver&&) = delete;
+    BluetoothATDriver& operator=(BluetoothATDriver&&) = delete;
+
 
     /**
      * @brief Check whether the serial port is open and ready for communication.
@@ -121,13 +100,12 @@ struct BluetoothATDriver {
      *
      * @example
      * @code
-     * ble_sniffer::BluetoothATDriver driver("/dev/ttyUSB0");
-     * if (driver.is_open()) {
+     * if (driver.is_connected()) {
      *     driver.start_scan();
      * }
      * @endcode
      */
-    bool is_open() const { return m_file_descriptor >= 0; }
+    bool is_connected();
 
     /**
      * @brief Read one complete response line from the device.
@@ -162,55 +140,125 @@ struct BluetoothATDriver {
     /**
      * @brief Query device status (AT command).
      * @return RawMessage with type STATUS if device is responsive.
+     *
+     * @example
+     * @code
+     * auto status = driver.query_status();
+     * if (status.type() == ble_sniffer::MessageType::STATUS) {
+     *     std::cout << "Device responsive: " << status.data() << std::endl;
+     * }
+     * @endcode
      */
     RawMessage query_status();
 
     /**
      * @brief Query the device MAC address (AT+ADDR?).
      * @return RawMessage with type ADDRESS containing the hex address.
+     *
+     * @example
+     * @code
+     * auto addr = driver.query_address();
+     * if (addr.type() == ble_sniffer::MessageType::ADDRESS) {
+     *     std::cout << "MAC: " << addr.data() << std::endl;
+     * }
+     * @endcode
      */
     RawMessage query_address();
 
     /**
      * @brief Query firmware version (AT+VERS?).
      * @return RawMessage with type VERSION containing the version string.
+     *
+     * @example
+     * @code
+     * auto ver = driver.query_version();
+     * if (ver.type() == ble_sniffer::MessageType::VERSION) {
+     *     std::cout << "Firmware: " << ver.data() << std::endl;
+     * }
+     * @endcode
      */
     RawMessage query_version();
 
     /**
      * @brief Get a formatted summary of device status, address, and version.
      * @return Multi-line string with device information.
+     *
+     * @example
+     * @code
+     * std::cout << driver.device_info() << std::endl;
+     * // Output:
+     * // Device Info:
+     * // Status: OK
+     * // Address: AA:BB:CC:DD:EE:FF
+     * // Version: V1.0.0
+     * @endcode
      */
     std::string device_info();
 
-    /// Start BLE advertisement scanning (AT+SCAN1).
+    /**
+     * @brief Start BLE advertisement scanning (AT+SCAN1).
+     *
+     * @example
+     * @code
+     * driver.start_scan();
+     * while (true) {
+     *     auto msg = driver.read_line();
+     *     if (msg.type() == ble_sniffer::MessageType::SCAN_RESULT) {
+     *         auto scan = ble_sniffer::ScanResultMessage::from(msg);
+     *         std::cout << scan.mac_address() << std::endl;
+     *     }
+     * }
+     * @endcode
+     */
     void start_scan();
 
-    /// Stop BLE advertisement scanning (AT+SCAN0).
+    /**
+     * @brief Stop BLE advertisement scanning (AT+SCAN0).
+     *
+     * @example
+     * @code
+     * driver.stop_scan();
+     * @endcode
+     */
     void stop_scan();
 
     /**
      * @brief Set the device baud rate (AT+BAUD).
-     * @param baud_rate The desired baud rate.
+     * @param baud_rate The desired AT baud rate parameter.
+     *
+     * @example
+     * @code
+     * driver.set_baud_rate(ble_sniffer::AtBaudParam::BAUD_230400);
+     * @endcode
      */
-    void set_baud_rate(BaudRate baud_rate);
+    void set_baud_rate(AtBaudParam baud_rate);
 
     /**
      * @brief Set active or passive scan mode (AT+ACT).
      * @param scan_mode The desired scan mode.
+     *
+     * @example
+     * @code
+     * driver.set_scan_mode(ble_sniffer::ScanMode::ACTIVE);
+     * @endcode
      */
     void set_scan_mode(ScanMode scan_mode);
 
-    /// Restart the device module (AT+RST).
+    /**
+     * @brief Restart the device module (AT+RST).
+     *
+     * @example
+     * @code
+     * driver.reset_device();
+     * @endcode
+     */
     void reset_device();
 
 private:
-    std::string m_device;
-    int m_file_descriptor;
+    std::unique_ptr<serial::SerialPort> m_serial_port;
     std::string m_read_buffer;
 
-    /// Maximum read buffer size (64KB). Overflow clears the buffer and returns error.
-    static constexpr size_t MAX_READ_BUFFER = 65536;
+
 };
 
 } // namespace ble_sniffer
