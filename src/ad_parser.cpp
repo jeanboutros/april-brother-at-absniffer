@@ -1,5 +1,6 @@
 #include <ble_sniffer/ad_parser.h>
 #include <ble_sniffer/assigned_numbers.h>
+#include <ble_sniffer/types.h>
 
 #include <iomanip>
 #include <sstream>
@@ -36,8 +37,7 @@ std::vector<AdStructure> parse_ad_structures(const std::vector<uint8_t>& adv_dat
 std::optional<std::string> decode_manufacturer(const std::vector<AdStructure>& structures) {
     for (const auto& ad : structures) {
         if (ad.type == 0xFF && ad.data.size() >= 2) {
-            uint16_t company_id = static_cast<uint16_t>(ad.data[0]) |
-                                  (static_cast<uint16_t>(ad.data[1]) << 8);
+            uint16_t company_id = le16(&ad.data[0]);
             return std::string(company_name_from_id(company_id));
         }
     }
@@ -85,8 +85,7 @@ std::optional<std::string> decode_ad_data(const AdStructure& ad) {
         if (ad.data.size() < 2) return std::nullopt;
         std::string result;
         for (size_t i = 0; i + 1 < ad.data.size(); i += 2) {
-            uint16_t uuid = static_cast<uint16_t>(ad.data[i]) |
-                            (static_cast<uint16_t>(ad.data[i + 1]) << 8);
+            uint16_t uuid = le16(&ad.data[i]);
             if (!result.empty()) result += ", ";
             std::ostringstream ss;
             ss << "0x" << std::hex << std::setfill('0') << std::setw(4) << uuid;
@@ -100,10 +99,7 @@ std::optional<std::string> decode_ad_data(const AdStructure& ad) {
         if (ad.data.size() < 4) return std::nullopt;
         std::string result;
         for (size_t i = 0; i + 3 < ad.data.size(); i += 4) {
-            uint32_t uuid = static_cast<uint32_t>(ad.data[i]) |
-                            (static_cast<uint32_t>(ad.data[i + 1]) << 8) |
-                            (static_cast<uint32_t>(ad.data[i + 2]) << 16) |
-                            (static_cast<uint32_t>(ad.data[i + 3]) << 24);
+            uint32_t uuid = le32(&ad.data[i]);
             if (!result.empty()) result += ", ";
             std::ostringstream ss;
             ss << "0x" << std::hex << std::setfill('0') << std::setw(8) << uuid;
@@ -141,8 +137,7 @@ std::optional<std::string> decode_ad_data(const AdStructure& ad) {
     // https://www.bluetooth.com/specifications/assigned-numbers/ (Section 6.2 - Appearance Values)
     case 0x19: { // Appearance
         if (ad.data.size() < 2) return std::nullopt;
-        uint16_t appearance = static_cast<uint16_t>(ad.data[0]) |
-                              (static_cast<uint16_t>(ad.data[1]) << 8);
+        uint16_t appearance = le16(&ad.data[0]);
         std::ostringstream ss;
         ss << "0x" << std::hex << std::setfill('0') << std::setw(4) << appearance
            << " (category=" << std::dec << (appearance >> 6) << ")";
@@ -151,10 +146,8 @@ std::optional<std::string> decode_ad_data(const AdStructure& ad) {
     // Core Spec Supplement Part A, Section 1.9
     case 0x12: { // Slave Connection Interval Range
         if (ad.data.size() < 4) return std::nullopt;
-        uint16_t min_interval = static_cast<uint16_t>(ad.data[0]) |
-                                (static_cast<uint16_t>(ad.data[1]) << 8);
-        uint16_t max_interval = static_cast<uint16_t>(ad.data[2]) |
-                                (static_cast<uint16_t>(ad.data[3]) << 8);
+        uint16_t min_interval = le16(&ad.data[0]);
+        uint16_t max_interval = le16(&ad.data[2]);
         std::ostringstream ss;
         ss << std::fixed << std::setprecision(2)
            << (min_interval * 1.25) << "ms - " << (max_interval * 1.25) << "ms";
