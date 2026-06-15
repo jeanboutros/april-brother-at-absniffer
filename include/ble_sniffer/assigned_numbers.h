@@ -36,7 +36,7 @@ namespace ble_sniffer {
  * @example
  * @code
  * // Decode manufacturer from advertisement data (AD type 0xFF)
- * uint16_t id = adv_data[0] | (adv_data[1] << 8); // little-endian
+ * uint16_t id = ble_sniffer::le16(&adv_data[0]);
  * std::cout << ble_sniffer::company_name_from_id(id) << std::endl;
  * @endcode
  */
