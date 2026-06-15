@@ -1,4 +1,5 @@
 #include "ble_sniffer/proprietary_parsers.h"
+#include <ble_sniffer/types.h>
 
 #include <iomanip>
 #include <sstream>
@@ -32,7 +33,6 @@ std::string bytes_to_ascii(const std::vector<uint8_t>& data, size_t offset = 0) 
 } // anonymous namespace
 
 // Reference: https://github.com/furiousMAC/continuity
-// Reference: https://github.com/nicedouble/AppleBLEDecoder
 // Reference: https://developer.apple.com/ibeacon/
 namespace apple {
 
@@ -47,15 +47,15 @@ std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
             return ParseResult{"iBeacon (truncated)", bytes_to_hex(mfr_data, 1)};
         }
         // Byte 1 = length (0x15 = 21)
-        // Bytes 2-17 = UUID, 18-19 = Major (BE), 20-21 = Minor (BE), 22 = TX Power
+        // Bytes 2-17 = UUID, 18-19 = Major (BE -- Apple iBeacon spec, vendor exception to BLE LE convention), 20-21 = Minor (BE), 22 = TX Power (byte offset 22, 0-based)
         std::ostringstream uuid;
         uuid << std::hex << std::setfill('0');
         for (int i = 2; i < 18; ++i) {
             uuid << std::setw(2) << static_cast<int>(mfr_data[i]);
             if (i == 5 || i == 7 || i == 9 || i == 11) uuid << '-';
         }
-        uint16_t major = (static_cast<uint16_t>(mfr_data[18]) << 8) | mfr_data[19];
-        uint16_t minor = (static_cast<uint16_t>(mfr_data[20]) << 8) | mfr_data[21];
+        uint16_t major = be16(&mfr_data[18]);
+        uint16_t minor = be16(&mfr_data[20]);
         int8_t tx_power = (mfr_data.size() > 22) ? static_cast<int8_t>(mfr_data[22]) : 0;
 
         std::ostringstream detail;
@@ -67,7 +67,7 @@ std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
         return ParseResult{"AirDrop", bytes_to_hex(mfr_data, 1)};
     }
     case 0x07: { // AirPods
-        // Reference: https://github.com/nicedouble/AppleBLEDecoder
+        // Reference: https://github.com/furiousMAC/continuity
         if (mfr_data.size() < 4) {
             return ParseResult{"AirPods (truncated)", bytes_to_hex(mfr_data, 1)};
         }
@@ -78,25 +78,41 @@ std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
         detail << "len=" << static_cast<int>(length)
                << " model=0x" << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(device_model);
 
+        /**
+         * @brief Format a battery nibble as a human-readable label.
+         *
+         * Nibbles 0-10 represent battery level in 10% increments (0% to 100%).
+         * Nibbles 11-15 are out-of-range and displayed as "??" per ADR-0008.
+         *
+         * @param nibble 4-bit battery value (0-15).
+         * @return Formatted string: "N*10% (raw=N)" for valid, "?? (raw=N)" for invalid.
+         */
+        auto format_battery = [](uint8_t nibble) -> std::string {
+            if (nibble <= 10) {
+                return std::to_string(nibble * 10) + "% (raw=" + std::to_string(nibble) + ")";
+            }
+            return "?? (raw=" + std::to_string(nibble) + ")";
+        };
+
         if (mfr_data.size() >= 7) {
             // Battery and status bits are encoded in later bytes
             uint8_t battery_byte = mfr_data[6];
             uint8_t left = (battery_byte >> 4) & 0x0F;
             uint8_t right = battery_byte & 0x0F;
-            detail << " battery L=" << static_cast<int>(left) << " R=" << static_cast<int>(right);
+            detail << " L=" << format_battery(left) << " R=" << format_battery(right);
         }
         if (mfr_data.size() >= 8) {
             uint8_t case_battery = mfr_data[7] & 0x0F;
             uint8_t charging = (mfr_data[7] >> 4) & 0x07;
             bool lid_open = (mfr_data[7] >> 7) & 0x01;
-            detail << " Case=" << static_cast<int>(case_battery)
+            detail << " Case=" << format_battery(case_battery)
                    << " charging=0x" << std::hex << static_cast<int>(charging)
                    << (lid_open ? " lid=open" : " lid=closed");
         }
         return ParseResult{"AirPods", detail.str()};
     }
     case 0x09: { // AirPlay
-        // Reference: https://github.com/nicedouble/AppleBLEDecoder
+        // Reference: https://github.com/furiousMAC/continuity
         if (mfr_data.size() < 3) {
             return ParseResult{"AirPlay", bytes_to_hex(mfr_data, 1)};
         }
@@ -174,7 +190,7 @@ std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
 
 } // namespace apple
 
-// Reference: https://github.com/nicedouble/AppleBLEDecoder (Samsung section)
+// Reference: https://github.com/furiousMAC/continuity (Samsung section)
 namespace samsung {
 
 std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
@@ -186,7 +202,7 @@ std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
     if (type_byte == 0x42) {
         detail << "SmartThings/Galaxy";
         if (mfr_data.size() >= 3) {
-            uint16_t device_type = (static_cast<uint16_t>(mfr_data[1]) << 8) | mfr_data[2];
+            uint16_t device_type = le16(&mfr_data[1]);  // LE per BLE Core Spec Vol 1 Part A §1
             detail << " device_type=0x" << std::hex << std::setfill('0') << std::setw(4) << device_type;
         }
         if (mfr_data.size() > 3) {
@@ -231,13 +247,13 @@ std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
 
 } // namespace microsoft
 
-// Reference: https://github.com/nicedouble/AppleBLEDecoder (Sony section)
+// Reference: https://github.com/furiousMAC/continuity (Sony section)
 namespace sony {
 
 std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
     if (mfr_data.size() < 2) return std::nullopt;
 
-    uint16_t protocol_ver = (static_cast<uint16_t>(mfr_data[0]) << 8) | mfr_data[1];
+    uint16_t protocol_ver = le16(&mfr_data[0]);  // LE per BLE Core Spec Vol 1 Part A §1; not verified against Sony docs
     std::ostringstream detail;
     detail << "protocol=0x" << std::hex << std::setfill('0') << std::setw(4) << protocol_ver;
     if (mfr_data.size() > 2) {
@@ -298,7 +314,7 @@ namespace razer {
 std::optional<ParseResult> parse(const std::vector<uint8_t>& mfr_data) {
     if (mfr_data.size() < 2) return std::nullopt;
 
-    uint16_t model = (static_cast<uint16_t>(mfr_data[0]) << 8) | mfr_data[1];
+    uint16_t model = le16(&mfr_data[0]);  // LE per BLE Core Spec Vol 1 Part A §1; not verified against Razer docs
     std::ostringstream detail;
     detail << "model=0x" << std::hex << std::setfill('0') << std::setw(4) << model;
     if (mfr_data.size() > 2) {
@@ -337,8 +353,7 @@ std::optional<ParseResult> decode_proprietary_parts(uint16_t company_id, const s
 
 std::optional<ParseResult> decode_proprietary_parts(const std::vector<uint8_t>& mfr_ad_data) {
     if (mfr_ad_data.size() < 2) return std::nullopt;
-    uint16_t company_id = static_cast<uint16_t>(mfr_ad_data[0]) |
-                           (static_cast<uint16_t>(mfr_ad_data[1]) << 8);
+    uint16_t company_id = le16(&mfr_ad_data[0]);
     std::vector<uint8_t> payload(mfr_ad_data.begin() + 2, mfr_ad_data.end());
     return decode_proprietary_parts(company_id, payload);
 }
