@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
     bool scan_flag = false;
     bool stop_scan_flag = false;
     bool stat_flag = false;
+    bool active_scan = false;
     int  stat_limit = 30;
     int  verbosity = 0;
     std::string output_path;
@@ -94,6 +95,7 @@ int main(int argc, char** argv) {
     app.add_flag("-v,--verbose", verbosity, "Verbosity level (-v: formatted MAC, -vv: full detail)");
     app.add_flag("--stat", stat_flag, "Show live device dashboard (TUI) instead of raw packet stream");
     app.add_option("--stat-limit", stat_limit, "Max devices to track in --stat mode")->default_val(30);
+    app.add_flag("--active", active_scan, "Use active scan mode (sends SCAN_REQ, receives SCAN_RSP). Default: passive.");
     app.add_option("-o,--output", output_path, "Write captured packets to a JSONL file (one packet per line)");
     app.add_option("device", device_path, "Serial device path (e.g. /dev/cu.usbmodemXXX or /dev/ttyUSB0)")
         ->required();
@@ -122,6 +124,9 @@ int main(int argc, char** argv) {
     }
     ble_sniffer::BluetoothATDriver driver(std::move(port));
 
+    // Set the baud rate to 230400 bps for faster scanning.
+    driver.set_baud_rate(ble_sniffer::AtBaudParam::BAUD_230400);
+
     if (info_flag) {
         std::cout << "Reading from Bluetooth AT Driver..." << std::endl;
         std::cout << "----------------------------------------" << std::endl;
@@ -141,6 +146,8 @@ int main(int argc, char** argv) {
         }
 
         std::signal(SIGINT, on_sigint);
+        driver.set_scan_mode(active_scan ? ble_sniffer::ScanMode::ACTIVE
+                                         : ble_sniffer::ScanMode::PASSIVE);
         driver.start_scan();
 
         std::unique_ptr<ble_sniffer::stat::DeviceTracker> tracker;

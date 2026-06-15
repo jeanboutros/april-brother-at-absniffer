@@ -246,6 +246,12 @@ struct SerialPort {
     virtual bool set_baud_rate(BaudRate baud_rate) = 0;
 
     /**
+     * @brief Get the current baud rate of the serial port.
+     * @return The current baud rate.
+     */
+    virtual BaudRate get_baud_rate() = 0;
+
+    /**
      * @brief Maximum buffer size for a single read operation (64 KB).
      *
      * Used to guard against unbounded buffer growth in line-oriented

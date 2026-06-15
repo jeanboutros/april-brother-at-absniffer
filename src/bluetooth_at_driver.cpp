@@ -96,12 +96,37 @@ RawMessage BluetoothATDriver::query_version() {
     return read_line();
 }
 
+
+int BluetoothATDriver::get_baud_rate() {
+    if (!is_connected()) {
+        throw std::runtime_error("Serial port is not connected");
+    }
+    serial::BaudRate current_baud = m_serial_port->get_baud_rate();
+    int baud_num = static_cast<int>(current_baud);
+    return baud_num;
+}
+
+AtBaudParam BluetoothATDriver::get_at_baud_rate() {
+    int baud_num = get_baud_rate();
+    switch (baud_num) {
+        case 9600: return AtBaudParam::BAUD_9600;
+        case 19200: return AtBaudParam::BAUD_19200;
+        case 38400: return AtBaudParam::BAUD_38400;
+        case 57600: return AtBaudParam::BAUD_57600;
+        case 115200: return AtBaudParam::BAUD_115200;
+        case 230400: return AtBaudParam::BAUD_230400;
+        default:
+            throw std::invalid_argument("Unsupported baud rate: " + std::to_string(baud_num));
+    }
+}
+
 std::string BluetoothATDriver::device_info() {
     if (!is_connected()) return "Device Info:\nPort not open\n";
     std::string info = "Device Info:\n";
     info += "Status: " + query_status().prefix() + "\n";
     info += "Address: " + address_to_mac_address(query_address().data()) + "\n";
     info += "Version: " + query_version().data() + "\n";
+    info += "Baud Rate: " + std::to_string(get_baud_rate());
     return info;
 }
 

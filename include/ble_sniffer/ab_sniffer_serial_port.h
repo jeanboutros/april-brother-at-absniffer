@@ -83,6 +83,17 @@ struct ABSnifferSerialPort : public SerialPort {
      */
     bool set_baud_rate(BaudRate baud_rate) override;
 
+    /**
+     * @brief Get the current baud rate of the serial port.
+     * @return The current baud rate.
+     *
+     * @example
+     * @code
+     * serial::BaudRate baud = port->get_baud_rate();
+     * @endcode
+     */
+    BaudRate get_baud_rate() override;
+
     /// @brief Check whether the serial port is open. @return true if open.
     bool is_open() const override;
 

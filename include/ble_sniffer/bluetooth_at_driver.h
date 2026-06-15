@@ -235,6 +235,37 @@ struct BluetoothATDriver {
     void set_baud_rate(AtBaudParam baud_rate);
 
     /**
+     * @brief Get the current serial port baud rate as an integer.
+     * @return The baud rate in bps (e.g. 115200).
+     * @throws std::runtime_error if the port is not connected.
+     *
+     * @example
+     * @code
+     * int rate = driver.get_baud_rate();
+     * // Returns: 115200 (or throws if not connected)
+     * @endcode
+     */
+    int get_baud_rate();
+
+    /**
+     * @brief Get the current baud rate as an AT command parameter.
+     *
+     * Converts the current serial port baud rate to the corresponding
+     * AtBaudParam enum value for use with set_baud_rate().
+     *
+     * @return The AT baud rate parameter matching the current port speed.
+     * @throws std::runtime_error if the port is not connected.
+     * @throws std::invalid_argument if the current baud rate is unsupported.
+     *
+     * @example
+     * @code
+     * ble_sniffer::AtBaudParam param = driver.get_at_baud_rate();
+     * // Returns: AtBaudParam::BAUD_115200
+     * @endcode
+     */
+    AtBaudParam get_at_baud_rate();
+
+    /**
      * @brief Set active or passive scan mode (AT+ACT).
      * @param scan_mode The desired scan mode.
      *

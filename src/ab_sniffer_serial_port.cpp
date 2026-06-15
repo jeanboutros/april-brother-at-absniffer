@@ -137,6 +137,10 @@ namespace serial {
         return true;
     }
 
+    BaudRate ABSnifferSerialPort::get_baud_rate() {
+        return m_impl->current_baud_rate;
+    }
+
     void ABSnifferSerialPort::close_connection() {
         if (is_open()) {
             // Best-effort cleanup: failures are ignored to ensure the fd is always closed.
