@@ -26,6 +26,7 @@
  * @endcode
  */
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -243,5 +244,85 @@ MessageType message_type_from_prefix(const std::string& prefix);
  * @endcode
  */
 std::string address_to_mac_address(const std::string& address_hex);
+
+// --- Byte-Order Helpers ---
+
+/**
+ * @brief Parse a little-endian 16-bit unsigned integer from a byte buffer.
+ *
+ * BLE multi-byte fields are transmitted little-endian (LSByte first). Use this
+ * helper for all BLE protocol parsing.
+ *
+ * @warning Undefined behavior if data points to fewer than 2 consecutive bytes.
+ *          Callers MUST ensure sufficient buffer length before calling.
+ *
+ * @note Safe for unaligned access — uses byte-level reads, not pointer cast.
+ *
+ * @param data Pointer to the first byte of a 16-bit little-endian integer.
+ * @return The parsed 16-bit integer in host byte order.
+ *
+ * @see Bluetooth Core Specification, Vol 1, Part A, Section 1
+ *
+ * @example
+ * @code
+ * const uint8_t buf[] = {0x34, 0x12};
+ * uint16_t val = ble_sniffer::le16(buf);
+ * // val == 0x1234
+ * @endcode
+ */
+inline constexpr uint16_t le16(const uint8_t* data) noexcept {
+    return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
+}
+
+/**
+ * @brief Parse a little-endian 32-bit unsigned integer from a byte buffer.
+ *
+ * BLE multi-byte fields are transmitted little-endian (LSByte first). Use this
+ * helper for all BLE 32-bit field parsing.
+ *
+ * @warning Undefined behavior if data points to fewer than 4 consecutive bytes.
+ *          Callers MUST ensure sufficient buffer length before calling.
+ *
+ * @note Safe for unaligned access — uses byte-level reads, not pointer cast.
+ *
+ * @param data Pointer to the first byte of a 32-bit little-endian integer.
+ * @return The parsed 32-bit integer in host byte order.
+ *
+ * @example
+ * @code
+ * const uint8_t buf[] = {0x78, 0x56, 0x34, 0x12};
+ * uint32_t val = ble_sniffer::le32(buf);
+ * // val == 0x12345678
+ * @endcode
+ */
+inline constexpr uint32_t le32(const uint8_t* data) noexcept {
+    return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
+           (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
+}
+
+/**
+ * @brief Parse a big-endian 16-bit unsigned integer from a byte buffer.
+ *
+ * For vendor-specific formats that use big-endian (e.g., Apple iBeacon
+ * Major/Minor). This is a vendor exception to the BLE little-endian convention.
+ *
+ * @warning Undefined behavior if data points to fewer than 2 consecutive bytes.
+ *          Callers MUST ensure sufficient buffer length before calling.
+ *
+ * @note Safe for unaligned access — uses byte-level reads, not pointer cast.
+ *
+ * @param data Pointer to the first byte of a 16-bit big-endian integer.
+ * @return The parsed 16-bit integer in host byte order.
+ *
+ * @example
+ * @code
+ * const uint8_t buf[] = {0x12, 0x34};
+ * uint16_t val = ble_sniffer::be16(buf);
+ * // val == 0x1234
+ * @endcode
+ */
+inline constexpr uint16_t be16(const uint8_t* data) noexcept {
+    return (static_cast<uint16_t>(data[0]) << 8) | static_cast<uint16_t>(data[1]);
+}
 
 } // namespace ble_sniffer
