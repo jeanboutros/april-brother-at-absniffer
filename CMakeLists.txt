@@ -25,6 +25,9 @@ add_executable(bluetooth-at-driver
 )
 target_link_libraries(bluetooth-at-driver PRIVATE ble_sniffer CLI11::CLI11)
 
+# --- Tests ---
+add_subdirectory(test)
+
 # --- Install ---
 install(TARGETS ble_sniffer bluetooth-at-driver
     RUNTIME DESTINATION bin
