@@ -99,8 +99,7 @@ DeviceEntry summarize(const ScanResultMessage& msg) {
     for (const auto& ad : structures) {
         if (ad.type == 0xFF) {
             if (ad.data.size() >= 2) {
-                uint16_t cid = static_cast<uint16_t>(ad.data[0]) |
-                               (static_cast<uint16_t>(ad.data[1]) << 8);
+                uint16_t cid = le16(&ad.data[0]);
                 e.manufacturer = company_name_from_id(cid);
             }
             auto parts = proprietary::decode_proprietary_parts(ad.data);
